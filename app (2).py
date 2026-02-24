@@ -8,23 +8,6 @@ import re
 from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
-import streamlit as st
-
-# Configuración de la página - PRIMERO SIEMPRE
-st.set_page_config(
-    page_title="Analizador de Licitaciones - Residuos Peligrosos",
-    page_icon="🗑️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-import pandas as pd
-import numpy as np
-import re
-from datetime import datetime
-import warnings
-warnings.filterwarnings('ignore')
-
-# ... resto del código de tu app ...
 
 # Configuración de la página - DEBE SER EL PRIMER COMANDO DE STREAMLIT
 st.set_page_config(
@@ -222,21 +205,21 @@ with st.sidebar:
     años_seleccionados = st.multiselect(
         "Años",
         options=años_disponibles,
-        default=años_disponibles
+        default=años_disponibles if años_disponibles else []
     )
     
     regiones_disponibles = sorted(df['Region'].dropna().unique())
     regiones_seleccionadas = st.multiselect(
         "Regiones",
         options=regiones_disponibles,
-        default=regiones_disponibles
+        default=regiones_disponibles if regiones_disponibles else []
     )
     
     categorias_disponibles = sorted(df['CategoriaOrganismo'].dropna().unique())
     categorias_seleccionadas = st.multiselect(
         "Tipo de Organismo",
         options=categorias_disponibles,
-        default=categorias_disponibles
+        default=categorias_disponibles if categorias_disponibles else []
     )
     
     # Filtro de búsqueda por texto
@@ -319,337 +302,372 @@ with tab1:
     
     with col1:
         # Distribución por región
-        fig_regiones = px.pie(
-            df_filtrado,
-            names='Region',
-            title='Distribución de Licitaciones por Región',
-            hole=0.4,
-            color_discrete_sequence=px.colors.qualitative.Set3
-        )
-        fig_regiones.update_traces(textposition='inside', textinfo='percent+label')
-        st.plotly_chart(fig_regiones, use_container_width=True)
+        if not df_filtrado.empty and 'Region' in df_filtrado.columns:
+            fig_regiones = px.pie(
+                df_filtrado,
+                names='Region',
+                title='Distribución de Licitaciones por Región',
+                hole=0.4,
+                color_discrete_sequence=px.colors.qualitative.Set3
+            )
+            fig_regiones.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(fig_regiones, use_container_width=True)
+        else:
+            st.info("No hay datos suficientes para mostrar el gráfico")
     
     with col2:
         # Distribución por tipo de organismo
-        fig_categorias = px.bar(
-            df_filtrado['CategoriaOrganismo'].value_counts().reset_index(),
-            x='count',
-            y='CategoriaOrganismo',
-            title='Licitaciones por Tipo de Organismo',
-            orientation='h',
-            color='CategoriaOrganismo',
-            color_discrete_sequence=px.colors.qualitative.Pastel
-        )
-        fig_categorias.update_layout(showlegend=False, yaxis={'categoryorder':'total ascending'})
-        st.plotly_chart(fig_categorias, use_container_width=True)
+        if not df_filtrado.empty and 'CategoriaOrganismo' in df_filtrado.columns:
+            cat_counts = df_filtrado['CategoriaOrganismo'].value_counts().reset_index()
+            cat_counts.columns = ['CategoriaOrganismo', 'count']
+            fig_categorias = px.bar(
+                cat_counts,
+                x='count',
+                y='CategoriaOrganismo',
+                title='Licitaciones por Tipo de Organismo',
+                orientation='h',
+                color='CategoriaOrganismo',
+                color_discrete_sequence=px.colors.qualitative.Pastel
+            )
+            fig_categorias.update_layout(showlegend=False, yaxis={'categoryorder':'total ascending'})
+            st.plotly_chart(fig_categorias, use_container_width=True)
+        else:
+            st.info("No hay datos suficientes para mostrar el gráfico")
     
     # Evolución anual
-    evolucion_anual = df_filtrado.groupby('Año').agg({
-        'IDLicitacion': 'count',
-        'Monto_CLP_Millones': 'sum'
-    }).reset_index().rename(columns={'IDLicitacion': 'Cantidad'})
-    
-    fig_evolucion = make_subplots(specs=[[{"secondary_y": True}]])
-    
-    fig_evolucion.add_trace(
-        go.Bar(x=evolucion_anual['Año'], y=evolucion_anual['Cantidad'], name="Cantidad", marker_color='#3498db'),
-        secondary_y=False,
-    )
-    
-    fig_evolucion.add_trace(
-        go.Scatter(x=evolucion_anual['Año'], y=evolucion_anual['Monto_CLP_Millones'], 
-                   name="Monto Total (MM CLP)", marker_color='#e74c3c', line=dict(width=3)),
-        secondary_y=True,
-    )
-    
-    fig_evolucion.update_layout(
-        title_text="Evolución Anual de Licitaciones",
-        hovermode='x unified'
-    )
-    fig_evolucion.update_xaxes(title_text="Año")
-    fig_evolucion.update_yaxes(title_text="Cantidad de Licitaciones", secondary_y=False)
-    fig_evolucion.update_yaxes(title_text="Monto Total (MM CLP)", secondary_y=True)
-    
-    st.plotly_chart(fig_evolucion, use_container_width=True)
+    if not df_filtrado.empty and 'Año' in df_filtrado.columns:
+        evolucion_anual = df_filtrado.groupby('Año').agg({
+            'IDLicitacion': 'count',
+            'Monto_CLP_Millones': 'sum'
+        }).reset_index().rename(columns={'IDLicitacion': 'Cantidad'})
+        
+        fig_evolucion = make_subplots(specs=[[{"secondary_y": True}]])
+        
+        fig_evolucion.add_trace(
+            go.Bar(x=evolucion_anual['Año'], y=evolucion_anual['Cantidad'], name="Cantidad", marker_color='#3498db'),
+            secondary_y=False,
+        )
+        
+        fig_evolucion.add_trace(
+            go.Scatter(x=evolucion_anual['Año'], y=evolucion_anual['Monto_CLP_Millones'], 
+                       name="Monto Total (MM CLP)", marker_color='#e74c3c', line=dict(width=3)),
+            secondary_y=True,
+        )
+        
+        fig_evolucion.update_layout(
+            title_text="Evolución Anual de Licitaciones",
+            hovermode='x unified'
+        )
+        fig_evolucion.update_xaxes(title_text="Año")
+        fig_evolucion.update_yaxes(title_text="Cantidad de Licitaciones", secondary_y=False)
+        fig_evolucion.update_yaxes(title_text="Monto Total (MM CLP)", secondary_y=True)
+        
+        st.plotly_chart(fig_evolucion, use_container_width=True)
 
 with tab2:
     st.header("Análisis Regional Detallado")
     
-    # Selector de región para análisis detallado
-    region_analisis = st.selectbox(
-        "Selecciona una región para análisis detallado",
-        options=sorted(df_filtrado['Region'].unique())
-    )
-    
-    df_region = df_filtrado[df_filtrado['Region'] == region_analisis]
-    
-    if not df_region.empty:
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Licitaciones en región", len(df_region))
-        with col2:
-            st.metric("Monto total (MM CLP)", f"${df_region['Monto_CLP_Millones'].sum():,.0f}M")
-        with col3:
-            st.metric("Organismos en región", df_region['Organismo'].nunique())
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Top organismos en la región
-            top_organismos_region = df_region['Organismo'].value_counts().head(10)
-            fig_top_region = px.bar(
-                x=top_organismos_region.values,
-                y=top_organismos_region.index,
-                title=f'Top 10 Organismos en {region_analisis}',
-                orientation='h',
-                color=top_organismos_region.values,
-                color_continuous_scale='Viridis'
-            )
-            fig_top_region.update_layout(xaxis_title="Cantidad de Licitaciones", yaxis_title="")
-            st.plotly_chart(fig_top_region, use_container_width=True)
-        
-        with col2:
-            # Evolución en la región
-            evolucion_region = df_region.groupby('Año').size().reset_index(name='Cantidad')
-            fig_evol_region = px.line(
-                evolucion_region,
-                x='Año',
-                y='Cantidad',
-                title=f'Evolución en {region_analisis}',
-                markers=True
-            )
-            fig_evol_region.update_layout(xaxis_title="Año", yaxis_title="Licitaciones")
-            st.plotly_chart(fig_evol_region, use_container_width=True)
-        
-        # Mapa de calor mensual
-        heatmap_data = df_region.groupby(['Año', 'MesNombre']).size().reset_index(name='Cantidad')
-        meses_orden = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-        
-        fig_heatmap = px.density_heatmap(
-            heatmap_data,
-            x='Año',
-            y='MesNombre',
-            z='Cantidad',
-            title=f'Estacionalidad de Licitaciones en {region_analisis}',
-            color_continuous_scale='Reds',
-            category_orders={"MesNombre": meses_orden}
+    if not df_filtrado.empty and 'Region' in df_filtrado.columns:
+        # Selector de región para análisis detallado
+        region_analisis = st.selectbox(
+            "Selecciona una región para análisis detallado",
+            options=sorted(df_filtrado['Region'].unique())
         )
-        st.plotly_chart(fig_heatmap, use_container_width=True)
+        
+        df_region = df_filtrado[df_filtrado['Region'] == region_analisis]
+        
+        if not df_region.empty:
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Licitaciones en región", len(df_region))
+            with col2:
+                monto_region = df_region['Monto_CLP_Millones'].sum()
+                st.metric("Monto total (MM CLP)", f"${monto_region:,.0f}M" if not pd.isna(monto_region) else "N/A")
+            with col3:
+                st.metric("Organismos en región", df_region['Organismo'].nunique())
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Top organismos en la región
+                top_organismos_region = df_region['Organismo'].value_counts().head(10)
+                if not top_organismos_region.empty:
+                    fig_top_region = px.bar(
+                        x=top_organismos_region.values,
+                        y=top_organismos_region.index,
+                        title=f'Top 10 Organismos en {region_analisis}',
+                        orientation='h',
+                        color=top_organismos_region.values,
+                        color_continuous_scale='Viridis'
+                    )
+                    fig_top_region.update_layout(xaxis_title="Cantidad de Licitaciones", yaxis_title="")
+                    st.plotly_chart(fig_top_region, use_container_width=True)
+            
+            with col2:
+                # Evolución en la región
+                evolucion_region = df_region.groupby('Año').size().reset_index(name='Cantidad')
+                if not evolucion_region.empty:
+                    fig_evol_region = px.line(
+                        evolucion_region,
+                        x='Año',
+                        y='Cantidad',
+                        title=f'Evolución en {region_analisis}',
+                        markers=True
+                    )
+                    fig_evol_region.update_layout(xaxis_title="Año", yaxis_title="Licitaciones")
+                    st.plotly_chart(fig_evol_region, use_container_width=True)
+            
+            # Mapa de calor mensual
+            heatmap_data = df_region.groupby(['Año', 'MesNombre']).size().reset_index(name='Cantidad')
+            meses_orden = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+            
+            if not heatmap_data.empty:
+                fig_heatmap = px.density_heatmap(
+                    heatmap_data,
+                    x='Año',
+                    y='MesNombre',
+                    z='Cantidad',
+                    title=f'Estacionalidad de Licitaciones en {region_analisis}',
+                    color_continuous_scale='Reds',
+                    category_orders={"MesNombre": meses_orden}
+                )
+                st.plotly_chart(fig_heatmap, use_container_width=True)
+    else:
+        st.info("No hay datos suficientes para el análisis regional")
 
 with tab3:
     st.header("Análisis por Organismo")
     
-    # Selector de categoría
-    categoria_analisis = st.selectbox(
-        "Selecciona tipo de organismo",
-        options=['Todos'] + sorted(df_filtrado['CategoriaOrganismo'].unique())
-    )
-    
-    df_categoria = df_filtrado if categoria_analisis == 'Todos' else df_filtrado[df_filtrado['CategoriaOrganismo'] == categoria_analisis]
-    
-    # Top organismos general
-    st.subheader(f"Top 20 Organismos Licitantes - {categoria_analisis}")
-    
-    top_20 = df_categoria.groupby('Organismo').agg({
-        'IDLicitacion': 'count',
-        'Monto_CLP_Millones': 'sum'
-    }).round(2).rename(columns={'IDLicitacion': 'Cantidad', 'Monto_CLP_Millones': 'Monto_Total_MM'})
-    
-    top_20 = top_20.sort_values('Cantidad', ascending=False).head(20).reset_index()
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        fig_top = px.bar(
-            top_20,
-            x='Cantidad',
-            y='Organismo',
-            title='Por Cantidad de Licitaciones',
-            orientation='h',
-            color='Monto_Total_MM',
-            color_continuous_scale='Viridis',
-            text='Cantidad'
+    if not df_filtrado.empty and 'CategoriaOrganismo' in df_filtrado.columns:
+        # Selector de categoría
+        categoria_analisis = st.selectbox(
+            "Selecciona tipo de organismo",
+            options=['Todos'] + sorted(df_filtrado['CategoriaOrganismo'].unique())
         )
-        fig_top.update_layout(yaxis={'categoryorder':'total ascending'})
-        st.plotly_chart(fig_top, use_container_width=True)
-    
-    with col2:
-        # Tabla resumen
-        st.dataframe(
-            top_20[['Organismo', 'Cantidad', 'Monto_Total_MM']],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Monto_Total_MM": st.column_config.NumberColumn(
-                    "Monto Total (MM CLP)",
-                    format="₪ %.0fM"
-                )
-            }
-        )
-    
-    # Análisis de concentración
-    st.subheader("Análisis de Concentración del Mercado")
-    
-    # Calcular concentración (Top N %)
-    total_lic = len(df_categoria)
-    top_5_pct = (top_20.head(5)['Cantidad'].sum() / total_lic * 100) if total_lic > 0 else 0
-    top_10_pct = (top_20.head(10)['Cantidad'].sum() / total_lic * 100) if total_lic > 0 else 0
-    top_20_pct = (top_20['Cantidad'].sum() / total_lic * 100) if total_lic > 0 else 0
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Concentración Top 5", f"{top_5_pct:.1f}%")
-    with col2:
-        st.metric("Concentración Top 10", f"{top_10_pct:.1f}%")
-    with col3:
-        st.metric("Concentración Top 20", f"{top_20_pct:.1f}%")
+        
+        df_categoria = df_filtrado if categoria_analisis == 'Todos' else df_filtrado[df_filtrado['CategoriaOrganismo'] == categoria_analisis]
+        
+        if not df_categoria.empty:
+            # Top organismos general
+            st.subheader(f"Top 20 Organismos Licitantes - {categoria_analisis}")
+            
+            top_20 = df_categoria.groupby('Organismo').agg({
+                'IDLicitacion': 'count',
+                'Monto_CLP_Millones': 'sum'
+            }).round(2).rename(columns={'IDLicitacion': 'Cantidad', 'Monto_CLP_Millones': 'Monto_Total_MM'})
+            
+            top_20 = top_20.sort_values('Cantidad', ascending=False).head(20).reset_index()
+            
+            if not top_20.empty:
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    fig_top = px.bar(
+                        top_20,
+                        x='Cantidad',
+                        y='Organismo',
+                        title='Por Cantidad de Licitaciones',
+                        orientation='h',
+                        color='Monto_Total_MM',
+                        color_continuous_scale='Viridis',
+                        text='Cantidad'
+                    )
+                    fig_top.update_layout(yaxis={'categoryorder':'total ascending'})
+                    st.plotly_chart(fig_top, use_container_width=True)
+                
+                with col2:
+                    # Tabla resumen
+                    st.dataframe(
+                        top_20[['Organismo', 'Cantidad', 'Monto_Total_MM']],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Monto_Total_MM": st.column_config.NumberColumn(
+                                "Monto Total (MM CLP)",
+                                format="₪ %.0fM"
+                            )
+                        }
+                    )
+                
+                # Análisis de concentración
+                st.subheader("Análisis de Concentración del Mercado")
+                
+                # Calcular concentración (Top N %)
+                total_lic = len(df_categoria)
+                top_5_pct = (top_20.head(5)['Cantidad'].sum() / total_lic * 100) if total_lic > 0 else 0
+                top_10_pct = (top_20.head(10)['Cantidad'].sum() / total_lic * 100) if total_lic > 0 else 0
+                top_20_pct = (top_20['Cantidad'].sum() / total_lic * 100) if total_lic > 0 else 0
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Concentración Top 5", f"{top_5_pct:.1f}%")
+                with col2:
+                    st.metric("Concentración Top 10", f"{top_10_pct:.1f}%")
+                with col3:
+                    st.metric("Concentración Top 20", f"{top_20_pct:.1f}%")
+    else:
+        st.info("No hay datos suficientes para el análisis por organismo")
 
 with tab4:
     st.header("Análisis de Tendencia Temporal")
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Vista por mes
-        tendencia_mensual = df_filtrado.groupby(df_filtrado['FechaPublicacion'].dt.to_period('M')).size().reset_index(name='Cantidad')
-        tendencia_mensual['Fecha'] = tendencia_mensual['FechaPublicacion'].astype(str)
+    if not df_filtrado.empty:
+        col1, col2 = st.columns(2)
         
-        fig_mensual = px.line(
-            tendencia_mensual,
-            x='Fecha',
-            y='Cantidad',
-            title='Tendencia Mensual de Licitaciones',
-            markers=True
-        )
-        fig_mensual.update_xaxes(title_text="Mes-Año")
-        fig_mensual.update_yaxes(title_text="Cantidad")
-        st.plotly_chart(fig_mensual, use_container_width=True)
-    
-    with col2:
-        # Distribución por trimestre
-        trimestres = df_filtrado.groupby(['Año', 'Trimestre']).size().reset_index(name='Cantidad')
-        trimestres['Año-Trim'] = trimestres['Año'].astype(str) + '-T' + trimestres['Trimestre'].astype(str)
+        with col1:
+            # Vista por mes
+            tendencia_mensual = df_filtrado.groupby(df_filtrado['FechaPublicacion'].dt.to_period('M')).size().reset_index(name='Cantidad')
+            if not tendencia_mensual.empty:
+                tendencia_mensual['Fecha'] = tendencia_mensual['FechaPublicacion'].astype(str)
+                
+                fig_mensual = px.line(
+                    tendencia_mensual,
+                    x='Fecha',
+                    y='Cantidad',
+                    title='Tendencia Mensual de Licitaciones',
+                    markers=True
+                )
+                fig_mensual.update_xaxes(title_text="Mes-Año")
+                fig_mensual.update_yaxes(title_text="Cantidad")
+                st.plotly_chart(fig_mensual, use_container_width=True)
         
-        fig_trimestral = px.bar(
-            trimestres,
-            x='Año-Trim',
-            y='Cantidad',
-            title='Licitaciones por Trimestre',
-            color='Año',
-            color_discrete_sequence=px.colors.qualitative.Bold
+        with col2:
+            # Distribución por trimestre
+            trimestres = df_filtrado.groupby(['Año', 'Trimestre']).size().reset_index(name='Cantidad')
+            if not trimestres.empty:
+                trimestres['Año-Trim'] = trimestres['Año'].astype(str) + '-T' + trimestres['Trimestre'].astype(str)
+                
+                fig_trimestral = px.bar(
+                    trimestres,
+                    x='Año-Trim',
+                    y='Cantidad',
+                    title='Licitaciones por Trimestre',
+                    color='Año',
+                    color_discrete_sequence=px.colors.qualitative.Bold
+                )
+                fig_trimestral.update_xaxes(title_text="Año-Trimestre")
+                fig_trimestral.update_yaxes(title_text="Cantidad")
+                st.plotly_chart(fig_trimestral, use_container_width=True)
+        
+        # Análisis de estacionalidad
+        st.subheader("Patrón Estacional por Mes")
+        
+        estacionalidad = df_filtrado.groupby('MesNombre').size().reset_index(name='Cantidad')
+        meses_orden = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        
+        if not estacionalidad.empty:
+            fig_estacional = px.bar(
+                estacionalidad,
+                x='MesNombre',
+                y='Cantidad',
+                title='Distribución de Licitaciones por Mes',
+                color='Cantidad',
+                color_continuous_scale='Blues',
+                category_orders={"MesNombre": meses_orden}
+            )
+            fig_estacional.update_layout(xaxis_title="Mes", yaxis_title="Cantidad")
+            st.plotly_chart(fig_estacional, use_container_width=True)
+        
+        # Análisis YoY (Year over Year)
+        st.subheader("Crecimiento Interanual")
+        
+        yoy = df_filtrado.groupby('Año').size().reset_index(name='Cantidad')
+        yoy['Crecimiento %'] = yoy['Cantidad'].pct_change() * 100
+        
+        fig_yoy = go.Figure()
+        fig_yoy.add_trace(go.Bar(
+            x=yoy['Año'],
+            y=yoy['Cantidad'],
+            name='Cantidad',
+            marker_color='#2ecc71'
+        ))
+        fig_yoy.add_trace(go.Scatter(
+            x=yoy['Año'],
+            y=yoy['Crecimiento %'],
+            name='Crecimiento %',
+            yaxis='y2',
+            marker_color='#e67e22',
+            line=dict(width=3)
+        ))
+        
+        fig_yoy.update_layout(
+            title='Crecimiento Interanual de Licitaciones',
+            xaxis=dict(title='Año'),
+            yaxis=dict(title='Cantidad', side='left'),
+            yaxis2=dict(title='Crecimiento %', side='right', overlaying='y', tickformat='.1f'),
+            hovermode='x unified'
         )
-        fig_trimestral.update_xaxes(title_text="Año-Trimestre")
-        fig_trimestral.update_yaxes(title_text="Cantidad")
-        st.plotly_chart(fig_trimestral, use_container_width=True)
-    
-    # Análisis de estacionalidad
-    st.subheader("Patrón Estacional por Mes")
-    
-    estacionalidad = df_filtrado.groupby('MesNombre').size().reset_index(name='Cantidad')
-    meses_orden = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    
-    fig_estacional = px.bar(
-        estacionalidad,
-        x='MesNombre',
-        y='Cantidad',
-        title='Distribución de Licitaciones por Mes',
-        color='Cantidad',
-        color_continuous_scale='Blues',
-        category_orders={"MesNombre": meses_orden}
-    )
-    fig_estacional.update_layout(xaxis_title="Mes", yaxis_title="Cantidad")
-    st.plotly_chart(fig_estacional, use_container_width=True)
-    
-    # Análisis YoY (Year over Year)
-    st.subheader("Crecimiento Interanual")
-    
-    yoy = df_filtrado.groupby('Año').size().reset_index(name='Cantidad')
-    yoy['Crecimiento %'] = yoy['Cantidad'].pct_change() * 100
-    
-    fig_yoy = go.Figure()
-    fig_yoy.add_trace(go.Bar(
-        x=yoy['Año'],
-        y=yoy['Cantidad'],
-        name='Cantidad',
-        marker_color='#2ecc71'
-    ))
-    fig_yoy.add_trace(go.Scatter(
-        x=yoy['Año'],
-        y=yoy['Crecimiento %'],
-        name='Crecimiento %',
-        yaxis='y2',
-        marker_color='#e67e22',
-        line=dict(width=3)
-    ))
-    
-    fig_yoy.update_layout(
-        title='Crecimiento Interanual de Licitaciones',
-        xaxis=dict(title='Año'),
-        yaxis=dict(title='Cantidad', side='left'),
-        yaxis2=dict(title='Crecimiento %', side='right', overlaying='y', tickformat='.1f'),
-        hovermode='x unified'
-    )
-    
-    st.plotly_chart(fig_yoy, use_container_width=True)
+        
+        st.plotly_chart(fig_yoy, use_container_width=True)
+    else:
+        st.info("No hay datos suficientes para el análisis temporal")
 
 with tab5:
     st.header("Datos Detallados")
     
-    # Selector de columnas a mostrar
-    columnas_mostrar = st.multiselect(
-        "Selecciona columnas a mostrar",
-        options=['IDLicitacion', 'NombreLicitacion', 'Tipo', 'Estado', 'FechaPublicacion',
-                'Organismo', 'Region', 'CategoriaOrganismo', 'MontoLicitacion', 
-                'Monto_CLP_Millones', 'Tipo_Monto_Categoria'],
-        default=['IDLicitacion', 'NombreLicitacion', 'Organismo', 'Region', 
-                'FechaPublicacion', 'MontoLicitacion']
-    )
-    
-    if columnas_mostrar:
-        df_display = df_filtrado[columnas_mostrar].copy()
+    if not df_filtrado.empty:
+        # Selector de columnas a mostrar
+        columnas_disponibles = ['IDLicitacion', 'NombreLicitacion', 'Tipo', 'Estado', 'FechaPublicacion',
+                               'Organismo', 'Region', 'CategoriaOrganismo', 'MontoLicitacion', 
+                               'Monto_CLP_Millones', 'Tipo_Monto_Categoria']
         
-        # Formatear fecha para mejor visualización
-        if 'FechaPublicacion' in df_display.columns:
-            df_display['FechaPublicacion'] = df_display['FechaPublicacion'].dt.strftime('%d/%m/%Y')
-        
-        # Mostrar tabla con formato mejorado
-        st.dataframe(
-            df_display,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Monto_CLP_Millones": st.column_config.NumberColumn(
-                    "Monto (MM CLP)",
-                    format="₪ %.2fM"
-                ),
-                "MontoLicitacion": st.column_config.TextColumn(
-                    "Monto Original"
-                )
-            }
+        columnas_mostrar = st.multiselect(
+            "Selecciona columnas a mostrar",
+            options=columnas_disponibles,
+            default=['IDLicitacion', 'NombreLicitacion', 'Organismo', 'Region', 
+                    'FechaPublicacion', 'MontoLicitacion']
         )
         
-        # Estadísticas y descargas
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.info(f"**Total registros:** {len(df_display)}")
-            st.info(f"**Rango de fechas:** {df_filtrado['FechaPublicacion'].min().strftime('%d/%m/%Y')} a {df_filtrado['FechaPublicacion'].max().strftime('%d/%m/%Y')}")
-        
-        with col2:
-            # Botón de descarga
-            csv = df_display.to_csv(index=False, encoding='utf-8-sig')
-            st.download_button(
-                label="📥 Descargar datos como CSV",
-                data=csv,
-                file_name=f"licitaciones_filtradas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                type="primary"
+        if columnas_mostrar:
+            df_display = df_filtrado[columnas_mostrar].copy()
+            
+            # Formatear fecha para mejor visualización
+            if 'FechaPublicacion' in df_display.columns:
+                df_display['FechaPublicacion'] = df_display['FechaPublicacion'].dt.strftime('%d/%m/%Y')
+            
+            # Mostrar tabla con formato mejorado
+            st.dataframe(
+                df_display,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Monto_CLP_Millones": st.column_config.NumberColumn(
+                        "Monto (MM CLP)",
+                        format="₪ %.2fM"
+                    ),
+                    "MontoLicitacion": st.column_config.TextColumn(
+                        "Monto Original"
+                    )
+                }
             )
+            
+            # Estadísticas y descargas
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.info(f"**Total registros:** {len(df_display)}")
+                if not df_filtrado['FechaPublicacion'].empty:
+                    fecha_min = df_filtrado['FechaPublicacion'].min().strftime('%d/%m/%Y')
+                    fecha_max = df_filtrado['FechaPublicacion'].max().strftime('%d/%m/%Y')
+                    st.info(f"**Rango de fechas:** {fecha_min} a {fecha_max}")
+            
+            with col2:
+                # Botón de descarga
+                csv = df_display.to_csv(index=False, encoding='utf-8-sig')
+                st.download_button(
+                    label="📥 Descargar datos como CSV",
+                    data=csv,
+                    file_name=f"licitaciones_filtradas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    type="primary"
+                )
+        else:
+            st.warning("Selecciona al menos una columna para mostrar")
     else:
-        st.warning("Selecciona al menos una columna para mostrar")
+        st.info("No hay datos para mostrar")
 
 # Footer
 st.markdown("---")
