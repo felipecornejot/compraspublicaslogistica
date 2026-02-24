@@ -8,6 +8,52 @@ import re
 from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
+import streamlit as st
+
+# Configuración de la página - PRIMERO SIEMPRE
+st.set_page_config(
+    page_title="Analizador de Licitaciones - Residuos Peligrosos",
+    page_icon="🗑️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Verificar importaciones con mensajes claros
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+except ImportError as e:
+    st.error(f"""
+    ❌ **Error de importación: {e}**
+    
+    Por favor, instala las dependencias necesarias:
+    
+    ```bash
+    pip install plotly pandas numpy streamlit openpyxl
+    ```
+    
+    O asegúrate de que tu archivo `requirements.txt` contenga:
+    ```
+    streamlit
+    pandas
+    numpy
+    plotly
+    openpyxl
+    ```
+    
+    Luego reinicia la aplicación.
+    """)
+    st.stop()
+
+import pandas as pd
+import numpy as np
+import re
+from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
+
+# ... resto del código de tu app ...
 
 # Configuración de la página - DEBE SER EL PRIMER COMANDO DE STREAMLIT
 st.set_page_config(
