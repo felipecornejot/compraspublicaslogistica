@@ -1,619 +1,644 @@
-# app.py — INSAMAR | Visualizador Ventas (Recauchados 2025)
-# Requiere: streamlit, pandas, openpyxl, plotly
-# Ejecuta: streamlit run app.py
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import re
+from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
 
-# =========================
-# 0) Config
-# =========================
+# Configuración de la página - DEBE SER EL PRIMER COMANDO DE STREAMLIT
 st.set_page_config(
-    page_title="INSAMAR | Ventas Recauchados 2025",
-    page_icon="📊",
+    page_title="Analizador de Licitaciones - Residuos Peligrosos",
+    page_icon="🗑️",
     layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# =========================
-# 1) Paleta (derivada del logo)
-# =========================
-COL_BG = "#000F30"        # navy profundo
-COL_PANEL = "#031A46"     # panel/vidrio
-COL_ACCENT = "#0D9CD8"    # cian
-COL_ACCENT_2 = "#3867A6"  # azul medio
-COL_TEXT = "#E3E3E8"      # gris muy claro
-COL_MUTED = "#A9B3C7"     # muted
-COL_GRID = "rgba(227,227,232,0.12)"
-COL_DARK_TEXT = "#1A1F2A"  # texto oscuro para inputs blancos
+# Título y descripción principal
+st.title("🗑️ Analizador de Licitaciones de Residuos Peligrosos")
+st.markdown("""
+    <div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin-bottom: 20px;'>
+    <h4>📊 Dashboard interactivo para el análisis de licitaciones públicas de retiro, traslado y disposición final de residuos peligrosos en Chile</h4>
+    <p>Esta aplicación permite explorar en detalle las licitaciones adjudicadas entre 2019 y 2026, con filtros dinámicos y visualizaciones profesionales.</p>
+    </div>
+""", unsafe_allow_html=True)
 
-# =========================
-# 2) CSS — estilo “artistico abierto”
-# =========================
-st.markdown(
-    f"""
-<style>
-/* ===== Top header transparente (quita barra blanca) ===== */
-header[data-testid="stHeader"] {{
-  background: transparent !important;
-}}
-header[data-testid="stHeader"]::before {{
-  background: transparent !important;
-}}
-div[data-testid="stToolbar"] {{
-  background: transparent !important;
-}}
-div[data-testid="stDecoration"] {{
-  background: transparent !important;
-}}
-/* en algunas versiones, esto también ayuda */
-div[data-testid="stAppViewContainer"] > .main > div:first-child {{
-  background: transparent !important;
-}}
+# --- FUNCIONES DE PROCESAMIENTO ---
 
-/* Fondo general */
-.stApp {{
-  background: radial-gradient(1200px 700px at 15% 10%, rgba(13,156,216,0.18), transparent 60%),
-              radial-gradient(900px 600px at 80% 30%, rgba(56,103,166,0.18), transparent 55%),
-              linear-gradient(180deg, {COL_BG} 0%, #00081F 100%);
-  color: {COL_TEXT};
-}}
-html, body, [class*="css"] {{ color: {COL_TEXT}; }}
-a {{ color: {COL_ACCENT}; }}
-
-/* Sidebar look */
-section[data-testid="stSidebar"] {{
-  background: linear-gradient(180deg, rgba(0,15,48,0.92), rgba(0,8,31,0.92)) !important;
-  border-right: 1px solid rgba(227,227,232,0.10);
-}}
-
-/* >>> Textos del sidebar (títulos/labels/ayudas) más blancos para contraste */
-section[data-testid="stSidebar"] .stMarkdown,
-section[data-testid="stSidebar"] .stMarkdown p,
-section[data-testid="stSidebar"] h1,
-section[data-testid="stSidebar"] h2,
-section[data-testid="stSidebar"] h3,
-section[data-testid="stSidebar"] h4,
-section[data-testid="stSidebar"] h5,
-section[data-testid="stSidebar"] h6 {{
-  color: rgba(255,255,255,0.92) !important;
-}}
-section[data-testid="stSidebar"] label {{
-  color: rgba(255,255,255,0.92) !important;
-}}
-/* ayuda pequeña (caption/help) */
-section[data-testid="stSidebar"] .stCaption,
-section[data-testid="stSidebar"] small,
-section[data-testid="stSidebar"] [data-testid="stTooltipIcon"] {{
-  color: rgba(255,255,255,0.85) !important;
-}}
-
-/* Panel “vidrio” */
-.panel {{
-  background: rgba(3,26,70,0.35);
-  border: 1px solid rgba(227,227,232,0.14);
-  border-radius: 18px;
-  padding: 16px 16px 10px 16px;
-  box-shadow: 0 16px 40px rgba(0,0,0,0.30);
-}}
-
-/* Header marca */
-.brand {{
-  display:flex; align-items:center; gap:14px;
-  margin: 4px 0 10px 0;
-}}
-.badge {{
-  width: 44px; height: 44px; border-radius: 14px;
-  background: linear-gradient(135deg, rgba(13,156,216,0.95), rgba(56,103,166,0.95));
-  box-shadow: 0 12px 30px rgba(0,0,0,0.35);
-  position: relative;
-  overflow:hidden;
-}}
-.badge:before {{
-  content:"";
-  position:absolute; inset:-40%;
-  background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.55), transparent 45%);
-  transform: rotate(20deg);
-}}
-.title {{
-  font-size: 28px; font-weight: 800; letter-spacing: 0.6px;
-}}
-.subtitle {{
-  margin-top:-6px;
-  font-size: 13px; color: {COL_MUTED};
-}}
-
-/* KPIs */
-.kpi-grid {{
-  display:grid;
-  grid-template-columns: repeat(5, minmax(160px, 1fr));
-  gap: 12px;
-  margin: 10px 0 8px 0;
-}}
-.kpi {{
-  background: rgba(3,26,70,0.35);
-  border: 1px solid rgba(227,227,232,0.14);
-  border-radius: 16px;
-  padding: 12px 12px 10px 12px;
-}}
-.kpi .label {{
-  font-size: 12px;
-  color: {COL_MUTED};
-  margin-bottom: 6px;
-}}
-.kpi .value {{
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: 0.2px;
-}}
-.kpi .hint {{
-  font-size: 11px;
-  color: rgba(227,227,232,0.65);
-  margin-top: 6px;
-}}
-
-/* File uploader dropzone */
-div[data-testid="stFileUploaderDropzone"] {{
-  background: rgba(3,26,70,0.35) !important;
-  border: 1px dashed rgba(227,227,232,0.22) !important;
-  border-radius: 18px !important;
-}}
-div[data-testid="stFileUploaderDropzone"] * {{
-  color: {COL_TEXT} !important;
-}}
-div[data-testid="stFileUploaderDropzone"] button {{
-  background: rgba(13,156,216,0.18) !important;
-  color: {COL_TEXT} !important;
-  border: 1px solid rgba(13,156,216,0.55) !important;
-  border-radius: 14px !important;
-}}
-
-/* Botones Streamlit (incluye download) */
-.stButton > button,
-div[data-testid="stDownloadButton"] > button {{
-  background: linear-gradient(135deg, rgba(13,156,216,0.35), rgba(56,103,166,0.35)) !important;
-  color: {COL_TEXT} !important;
-  border: 1px solid rgba(227,227,232,0.18) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 10px 24px rgba(0,0,0,0.25) !important;
-}}
-.stButton > button:hover,
-div[data-testid="stDownloadButton"] > button:hover {{
-  border: 1px solid rgba(13,156,216,0.55) !important;
-}}
-
-/* ===== Widgets generales (mantén estilo oscuro en main) ===== */
-div[data-baseweb="base-input"] > div {{
-  background: rgba(3,26,70,0.35) !important;
-  border: 1px solid rgba(227,227,232,0.18) !important;
-  border-radius: 14px !important;
-}}
-div[data-baseweb="base-input"] input,
-div[data-baseweb="base-input"] textarea {{
-  background: transparent !important;
-  color: {COL_TEXT} !important;
-}}
-div[data-baseweb="select"] > div {{
-  background: rgba(3,26,70,0.35) !important;
-  border: 1px solid rgba(227,227,232,0.18) !important;
-  border-radius: 14px !important;
-}}
-div[data-baseweb="select"] * {{
-  color: {COL_TEXT} !important;
-}}
-
-/* Date picker popover */
-div[data-baseweb="popover"] > div {{
-  background: rgba(0,15,48,0.98) !important;
-  border: 1px solid rgba(227,227,232,0.18) !important;
-}}
-
-/* Slider track */
-div[data-testid="stSlider"] [data-baseweb="slider"] > div {{
-  background: rgba(227,227,232,0.14) !important;
-}}
-
-/* Dataframes */
-div[data-testid="stDataFrame"] {{
-  background: rgba(3,26,70,0.20) !important;
-  border-radius: 14px !important;
-}}
-
-/* ===== Sidebar: inputs blancos con texto oscuro (para que 950 y fechas se lean) ===== */
-section[data-testid="stSidebar"] div[data-baseweb="base-input"] > div {{
-  background: rgba(255,255,255,0.96) !important;
-  border: 1px solid rgba(227,227,232,0.25) !important;
-}}
-section[data-testid="stSidebar"] div[data-baseweb="base-input"] input,
-section[data-testid="stSidebar"] div[data-baseweb="base-input"] textarea {{
-  color: {COL_DARK_TEXT} !important;
-}}
-section[data-testid="stSidebar"] div[data-baseweb="base-input"] input::placeholder {{
-  color: rgba(26,31,42,0.55) !important;
-}}
-/* iconos dentro de inputs (calendario, etc.) */
-section[data-testid="stSidebar"] div[data-baseweb="base-input"] svg {{
-  fill: rgba(26,31,42,0.70) !important;
-}}
-/* botones + / - del number_input */
-section[data-testid="stSidebar"] div[data-baseweb="base-input"] button {{
-  color: rgba(26,31,42,0.85) !important;
-}}
-
-/* Mantén selects/multiselect oscuros (se leen bien) */
-section[data-testid="stSidebar"] div[data-baseweb="select"] > div {{
-  background: rgba(3,26,70,0.35) !important;
-}}
-section[data-testid="stSidebar"] div[data-baseweb="select"] * {{
-  color: {COL_TEXT} !important;
-}}
-</style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# =========================
-# 3) Helpers
-# =========================
-def _fmt_clp(x: float) -> str:
-    if pd.isna(x):
-        return "—"
-    return f"${x:,.0f}".replace(",", ".")
-
-def _fmt_usd(x: float) -> str:
-    if pd.isna(x):
-        return "—"
-    return f"US$ {x:,.0f}"
-
-def _safe_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
-    cols = {c.lower(): c for c in df.columns}
-    for cand in candidates:
-        if cand.lower() in cols:
-            return cols[cand.lower()]
-    for cand in candidates:
-        for c in df.columns:
-            if cand.lower() in c.lower():
-                return c
-    return None
-
-@st.cache_data(show_spinner=False)
-def load_data_from_excel(file) -> pd.DataFrame:
-    df = pd.read_excel(file, sheet_name="Data venta")
-
-    # Fecha
-    col_date = _safe_col(df, ["Fecha de contabilización", "Fecha"])
-    if col_date:
-        df[col_date] = pd.to_datetime(df[col_date], errors="coerce")
-        df = df[df[col_date].notna()].copy()
-        df.rename(columns={col_date: "Fecha"}, inplace=True)
+@st.cache_data
+def cargar_y_procesar_datos(uploaded_file=None):
+    """
+    Carga y procesa los datos del archivo CSV
+    """
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file, sep=';', encoding='utf-8')
     else:
-        for c in df.columns:
-            if "fecha" in c.lower():
-                df[c] = pd.to_datetime(df[c], errors="coerce")
-                if df[c].notna().any():
-                    df.rename(columns={c: "Fecha"}, inplace=True)
-                    df = df[df["Fecha"].notna()].copy()
-                    break
-
-    rename_map = {}
-    rename_map[_safe_col(df, ["Número interno", "Numero interno", "DocNum", "Documento"])] = "Documento"
-    rename_map[_safe_col(df, ["Código de cliente/proveedor", "Codigo de cliente", "CardCode"])] = "CodCliente"
-    rename_map[_safe_col(df, ["Nombre de cliente/proveedor", "Nombre de cliente", "CardName"])] = "Cliente"
-    rename_map[_safe_col(df, ["SlpName", "Vendedor", "Ejecutivo"])] = "Vendedor"
-    rename_map[_safe_col(df, ["ItemCode", "Codigo item", "Item"])] = "ItemCode"
-    rename_map[_safe_col(df, ["Dscription", "Descripcion", "Description"])] = "Producto"
-    rename_map[_safe_col(df, ["Quantity", "Cantidad"])] = "Cantidad"
-    rename_map[_safe_col(df, ["Price", "Precio"])] = "PrecioUnit"
-    rename_map[_safe_col(df, ["Venta", "Total", "Monto"])] = "VentaCLP"
-
-    rename_map = {k: v for k, v in rename_map.items() if k is not None}
-    df.rename(columns=rename_map, inplace=True)
-
-    required = ["Fecha", "Documento", "Cliente", "Vendedor", "Producto", "Cantidad", "PrecioUnit", "VentaCLP"]
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        raise ValueError(f"Faltan columnas esperadas: {missing}. Revisa la hoja 'Data venta'.")
-
-    df["Cantidad"] = pd.to_numeric(df["Cantidad"], errors="coerce").fillna(0)
-    df["PrecioUnit"] = pd.to_numeric(df["PrecioUnit"], errors="coerce").fillna(0)
-    df["VentaCLP"] = pd.to_numeric(df["VentaCLP"], errors="coerce").fillna(0)
-
-    df["Año"] = df["Fecha"].dt.year
-    df["Mes"] = df["Fecha"].dt.to_period("M").astype(str)
-    df["Trimestre"] = df["Fecha"].dt.to_period("Q").astype(str)
-    df["TicketPromCLP"] = np.where(df["Cantidad"] > 0, df["VentaCLP"] / df["Cantidad"], np.nan)
-
+        # Si no hay archivo, usar datos de ejemplo (simulados)
+        st.warning("⚠️ No se ha cargado un archivo. Usando datos de ejemplo.")
+        # Crear un pequeño dataset de ejemplo
+        data_example = {
+            'IDLicitacion': ['2115-49-LE20', '5520-34-LE22', '4707-84-LE21'],
+            'NombreLicitacion': ['SERVICIO DE RETIRO DE RESIDUOS CLÍNICOS', 
+                                'Servicio de retiro traslado y disposición final de residuos peligrosos',
+                                'SERVICIO DE RETIRO, TRANSPORTE Y ELIMINACIÓN DE RESIDUOS PELIGROSOS'],
+            'Tipo': ['LE', 'LE', 'LE'],
+            'Estado': ['Adjudicada', 'Adjudicada', 'Adjudicada'],
+            'FechaPublicacion': ['26/11/2020 18:14:09', '03/05/2022 17:10:34', '10/12/2021 15:35:37'],
+            'Descripcion': ['...', '...', '...'],
+            'Moneda': ['CLP', 'CLP', 'CLP'],
+            'TipoPresupuesto': ['NO PUBLICADO', 'PUBLICADO', 'NO PUBLICADO'],
+            'TipoMonto': ['ESTIMADO', 'DISPONIBLE', 'DISPONIBLE'],
+            'MontoLicitacion': ['Entre 100 y 1000 UTM', '48.000.000', 'Entre 100 y 1000 UTM'],
+            'Organismo': ['Centro de Referencia de Salud de Maipú', 'UNIVERSIDAD DE CHILE', 'I MUNICIPALIDAD DE SAN NICOLAS']
+        }
+        df = pd.DataFrame(data_example)
+    
+    # Limpieza y procesamiento
+    df['FechaPublicacion'] = pd.to_datetime(df['FechaPublicacion'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
+    df['Año'] = df['FechaPublicacion'].dt.year
+    df['Mes'] = df['FechaPublicacion'].dt.month
+    df['MesNombre'] = df['FechaPublicacion'].dt.month_name().str[:3]
+    df['Trimestre'] = df['FechaPublicacion'].dt.quarter
+    df['Año-Mes'] = df['FechaPublicacion'].dt.to_period('M').astype(str)
+    
+    # Extraer región
+    df['Region'] = df['Organismo'].apply(extraer_region)
+    
+    # Categorizar organismo
+    df['CategoriaOrganismo'] = df['Organismo'].apply(categorizar_organismo)
+    
+    # Procesar montos
+    df['Monto_Numérico_CLP'] = df['MontoLicitacion'].apply(extraer_monto_numerico)
+    df['Monto_CLP_Millones'] = df['Monto_Numérico_CLP'] / 1_000_000
+    df['Tipo_Monto_Categoria'] = df['MontoLicitacion'].apply(clasificar_tipo_monto)
+    df['Monto_UTM_Estimado'] = df['MontoLicitacion'].apply(extraer_utm)
+    
     return df
 
-def kpi_cards(kpis: list[tuple[str, str, str]]):
-    parts = ['<div class="kpi-grid">']
-    for label, value, hint in kpis:
-        parts.append(
-            f'<div class="kpi">'
-            f'<div class="label">{label}</div>'
-            f'<div class="value">{value}</div>'
-            f'<div class="hint">{hint}</div>'
-            f'</div>'
-        )
-    parts.append("</div>")
-    st.markdown("".join(parts), unsafe_allow_html=True)
+def extraer_region(organismo):
+    """Extrae la región del nombre del organismo"""
+    organismo_str = str(organismo).upper()
+    
+    regiones = {
+        'Metropolitana': ['METROPOLITANA', 'SANTIAGO', 'MAIPU', 'SAN RAMON', 'RENCA', 'PROVIDENCIA', 
+                         'LAS CONDES', 'NUNOA', 'LA CISTERNA', 'VITACURA', 'LO ESPEJO', 'CERRO NAVIA',
+                         'CONCHALI', 'MACUL', 'LA REINA', 'PEÑAFLOR', 'EL MONTE', 'PAINE'],
+        'Valparaíso': ['VALPARAISO', 'SAN FELIPE', 'VIÑA DEL MAR', 'QUILPUE', 'CARTAGENA', 'SAN ANTONIO',
+                      'LOS ANDES', 'QUILLOTA', 'ZAPALLAR', 'NOGALES', 'LA LIGUA', 'PUCHUNCAVI'],
+        'Biobío': ['BIO BIO', 'CONCEPCIÓN', 'TALCAHUANO', 'LOS ANGELES', 'CHIGUAYANTE', 'SAN PEDRO DE LA PAZ',
+                  'CORONEL', 'LOTA', 'CURANILAHUE'],
+        'La Araucanía': ['ARAUCANIA', 'TEMUCO', 'ANGOL', 'VICTORIA', 'LAUTARO', 'NUEVA IMPERIAL'],
+        'Los Lagos': ['LOS LAGOS', 'PUERTO MONTT', 'OSORNO', 'CASTRO', 'ANCUD'],
+        'Magallanes': ['MAGALLANES', 'PUNTA ARENAS', 'PORVENIR', 'PUERTO NATALES'],
+        'Coquimbo': ['COQUIMBO', 'LA SERENA', 'OVALLE', 'ILLAPEL'],
+        'Aysén': ['AYSEN', 'COYHAIQUE', 'PUERTO AYSEN'],
+        'O\'Higgins': ['OHIGGINS', 'RANCAGUA', 'SAN FERNANDO', 'SAN VICENTE'],
+        'Maule': ['MAULE', 'CURICO', 'TALCA', 'LINARES', 'CAUQUENES'],
+        'Ñuble': ['ÑUBLE', 'CHILLAN', 'SAN CARLOS'],
+        'Arica y Parinacota': ['ARICA'],
+        'Tarapacá': ['TARAPACA', 'IQUIQUE', 'ALTO HOSPICIO'],
+        'Los Ríos': ['LOS RIOS', 'VALDIVIA', 'LA UNION'],
+        'Atacama': ['ATACAMA', 'COPIAPO', 'VALLENAR'],
+        'Antofagasta': ['ANTOFAGASTA', 'CALAMA', 'TOCOPILLA']
+    }
+    
+    for region, keywords in regiones.items():
+        if any(keyword in organismo_str for keyword in keywords):
+            return region
+    
+    return 'Otra / Nacional'
 
-# =========================
-# 4) Header
-# =========================
-st.markdown(
-    """
-<div class="brand">
-  <div class="badge"></div>
-  <div>
-    <div class="title">INSAMAR</div>
-    <div class="subtitle">Visualizador dinámico — Ventas Recauchados 2025 (auditoría-ready)</div>
-  </div>
-</div>
-""",
-    unsafe_allow_html=True,
-)
+def categorizar_organismo(nombre):
+    """Categoriza el tipo de organismo"""
+    nombre = str(nombre).upper()
+    
+    if any(word in nombre for word in ['MUNICIPALIDAD', 'ILUSTRE', 'I.', 'CORP MUNICIPAL', 'CORPORACION MUNICIPAL']):
+        return 'Municipalidad / Corporación'
+    elif any(word in nombre for word in ['SERVICIO DE SALUD', 'HOSPITAL', 'SUBSECRETARIA DE SALUD', 'SEREMI DE SALUD', 
+                                         'CESFAM', 'CENTRO DE SALUD', 'CLINICA']):
+        return 'Salud'
+    elif any(word in nombre for word in ['UNIVERSIDAD']):
+        return 'Universidad'
+    elif any(word in nombre for word in ['DIRECCION GENERAL DE AERONAUTICA CIVIL', 'DGAC']):
+        return 'DGAC'
+    elif any(word in nombre for word in ['FUERZA AEREA', 'EJERCITO', 'ARMADA', 'COMANDO']):
+        return 'Fuerzas Armadas'
+    elif any(word in nombre for word in ['MINISTERIO DE OBRAS PUBLICAS', 'VIALIDAD', 'MOP']):
+        return 'MOP'
+    else:
+        return 'Otro Servicio Público'
 
-# =========================
-# 5) Carga de datos
-# =========================
+def extraer_monto_numerico(monto_str):
+    """Extrae un valor numérico del campo MontoLicitacion"""
+    monto_str = str(monto_str).replace('.', '').replace(',', '').strip()
+    
+    if pd.isna(monto_str) or monto_str in ['', 'nan']:
+        return np.nan
+    
+    # Si es un número puro
+    if monto_str.isdigit():
+        try:
+            return float(monto_str)
+        except:
+            return np.nan
+    
+    # Si tiene UTM, extraer número y convertir (valor UTM aproximado)
+    if 'UTM' in monto_str:
+        numeros = re.findall(r'[\d.]+', monto_str)
+        if numeros:
+            try:
+                valor_utm = float(numeros[0].replace('.', ''))
+                return valor_utm * 60000  # Conversión aproximada
+            except:
+                return np.nan
+    
+    return np.nan
+
+def extraer_utm(monto_str):
+    """Extrae el valor en UTM si está presente"""
+    monto_str = str(monto_str)
+    if 'UTM' in monto_str:
+        numeros = re.findall(r'[\d.]+', monto_str)
+        if numeros:
+            try:
+                return float(numeros[0].replace('.', ''))
+            except:
+                return np.nan
+    return np.nan
+
+def clasificar_tipo_monto(monto_str):
+    """Clasifica el tipo de monto"""
+    monto_str = str(monto_str)
+    if 'UTM' in monto_str:
+        return 'Expresado en UTM'
+    elif monto_str.replace('.', '').isdigit():
+        return 'Monto fijo en CLP'
+    else:
+        return 'Sin especificar'
+
+# --- CARGA DE DATOS ---
+
 with st.sidebar:
-    st.markdown("### 📁 Datos")
-    uploaded = st.file_uploader("Sube el Excel (o usa el archivo por defecto)", type=["xlsx", "xlsm"])
-
+    st.image("https://img.icons8.com/color/96/000000/waste--v1.png", width=100)
+    st.header("⚙️ Configuración")
+    
+    uploaded_file = st.file_uploader(
+        "Cargar archivo CSV de licitaciones",
+        type=['csv'],
+        help="Sube el archivo CSV con los datos de licitaciones"
+    )
+    
+    # Cargar datos
+    with st.spinner('Cargando y procesando datos...'):
+        df = cargar_y_procesar_datos(uploaded_file)
+    
+    st.success(f"✅ Datos cargados: {len(df)} licitaciones")
+    
     st.markdown("---")
-    st.markdown("### 💱 Conversión (opcional)")
-    usd_rate = st.number_input("Tipo de cambio (CLP por 1 USD)", min_value=100, max_value=2000, value=950, step=10)
-    show_usd = st.toggle("Mostrar métricas también en USD", value=True)
-
-default_path = "Venta Recauchados 2025 (18 dic).xlsx"
-
-try:
-    data_source = uploaded if uploaded is not None else default_path
-    df = load_data_from_excel(data_source)
-except Exception as e:
-    st.error(f"No pude cargar la hoja 'Data venta'. Detalle: {e}")
-    st.stop()
-
-# =========================
-# 6) Filtros
-# =========================
-with st.sidebar:
-    st.markdown("### 🎛️ Filtros")
-
-    min_d = df["Fecha"].min().date()
-    max_d = df["Fecha"].max().date()
-
-    d1, d2 = st.date_input(
-        "Rango de fechas",
-        value=(min_d, max_d),
-        min_value=min_d,
-        max_value=max_d,
+    st.header("🔍 Filtros")
+    
+    # Filtros interactivos
+    años_disponibles = sorted(df['Año'].dropna().unique())
+    años_seleccionados = st.multiselect(
+        "Años",
+        options=años_disponibles,
+        default=años_disponibles
     )
-
-    clientes = sorted(df["Cliente"].dropna().unique().tolist())
-    vendedores = sorted(df["Vendedor"].dropna().unique().tolist())
-
-    sel_clientes = st.multiselect("Cliente(s)", options=clientes, default=[])
-    sel_vendedores = st.multiselect("Vendedor(es)", options=vendedores, default=[])
-
-    txt_producto = st.text_input(
-        "Buscar producto (contiene)",
-        value="",
-        help="Ej: 11R22.5, 295/80R22.5, PBA60, etc.",
+    
+    regiones_disponibles = sorted(df['Region'].dropna().unique())
+    regiones_seleccionadas = st.multiselect(
+        "Regiones",
+        options=regiones_disponibles,
+        default=regiones_disponibles
     )
-
-    st.markdown("---")
-    st.markdown("### 🧭 Agrupación")
-    group_main = st.selectbox(
-        "Agrupar análisis por",
-        options=["Mes", "Trimestre", "Cliente", "Vendedor", "Producto"],
-        index=0,
+    
+    categorias_disponibles = sorted(df['CategoriaOrganismo'].dropna().unique())
+    categorias_seleccionadas = st.multiselect(
+        "Tipo de Organismo",
+        options=categorias_disponibles,
+        default=categorias_disponibles
     )
-    top_n = st.slider("Top N (clientes/productos)", 5, 30, 12)
+    
+    # Filtro de búsqueda por texto
+    busqueda = st.text_input("🔎 Buscar en nombre u organismo", "")
+    
+    # Botón para aplicar filtros
+    aplicar_filtros = st.button("🔄 Aplicar Filtros", type="primary")
 
-mask = (df["Fecha"].dt.date >= d1) & (df["Fecha"].dt.date <= d2)
-if sel_clientes:
-    mask &= df["Cliente"].isin(sel_clientes)
-if sel_vendedores:
-    mask &= df["Vendedor"].isin(sel_vendedores)
-if txt_producto.strip():
-    mask &= df["Producto"].astype(str).str.contains(txt_producto.strip(), case=False, na=False)
+# --- APLICAR FILTROS ---
 
-dff = df[mask].copy()
+df_filtrado = df.copy()
 
-# =========================
-# 7) KPIs principales
-# =========================
-total_clp = float(dff["VentaCLP"].sum())
-total_qty = float(dff["Cantidad"].sum())
-avg_unit = float(dff["VentaCLP"].sum() / max(dff["Cantidad"].sum(), 1))
-docs = int(dff["Documento"].nunique())
-custs = int(dff["Cliente"].nunique())
-
-kpis = [
-    ("Venta total (CLP)", _fmt_clp(total_clp), "Suma de “Venta” en el rango filtrado"),
-    ("Unidades", f"{total_qty:,.0f}".replace(",", "."), "Suma de “Quantity”"),
-    ("Precio prom. por unidad", _fmt_clp(avg_unit), "Venta / Unidades (promedio ponderado)"),
-    ("Documentos", f"{docs:,}".replace(",", "."), "N° interno único"),
-    ("Clientes únicos", f"{custs:,}".replace(",", "."), "Clientes distintos en el período"),
-]
-kpi_cards(kpis)
-
-if show_usd:
-    st.caption(f"Conversión informativa: 1 USD = {usd_rate:,.0f} CLP".replace(",", "."))
-    kpis_usd = [
-        ("Venta total (USD)", _fmt_usd(total_clp / usd_rate), "CLP → USD (tipo cambio indicado)"),
-        ("Precio prom. (USD/ud)", _fmt_usd(avg_unit / usd_rate), "Promedio ponderado (CLP → USD)"),
+if años_seleccionados:
+    df_filtrado = df_filtrado[df_filtrado['Año'].isin(años_seleccionados)]
+if regiones_seleccionadas:
+    df_filtrado = df_filtrado[df_filtrado['Region'].isin(regiones_seleccionadas)]
+if categorias_seleccionadas:
+    df_filtrado = df_filtrado[df_filtrado['CategoriaOrganismo'].isin(categorias_seleccionadas)]
+if busqueda:
+    df_filtrado = df_filtrado[
+        df_filtrado['NombreLicitacion'].str.contains(busqueda, case=False, na=False) |
+        df_filtrado['Organismo'].str.contains(busqueda, case=False, na=False)
     ]
-    kpi_cards(kpis_usd)
+
+# --- MÉTRICAS PRINCIPALES ---
+
+st.markdown("## 📈 Panel de Control")
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    total_licitaciones = len(df_filtrado)
+    st.metric(
+        label="📋 Total Licitaciones",
+        value=f"{total_licitaciones:,}",
+        delta=f"{len(df_filtrado)/len(df)*100:.1f}% del total" if len(df) > 0 else "0%"
+    )
+
+with col2:
+    monto_total = df_filtrado['Monto_CLP_Millones'].sum()
+    st.metric(
+        label="💰 Monto Total (MM CLP)",
+        value=f"${monto_total:,.0f}M" if not pd.isna(monto_total) else "N/A",
+        delta="Suma de montos disponibles"
+    )
+
+with col3:
+    monto_promedio = df_filtrado['Monto_CLP_Millones'].mean()
+    st.metric(
+        label="📊 Monto Promedio (MM CLP)",
+        value=f"${monto_promedio:,.1f}M" if not pd.isna(monto_promedio) else "N/A",
+        delta="Por licitación"
+    )
+
+with col4:
+    organizaciones_unicas = df_filtrado['Organismo'].nunique()
+    st.metric(
+        label="🏢 Organizaciones",
+        value=f"{organizaciones_unicas:,}",
+        delta="Organismos distintos"
+    )
 
 st.markdown("---")
 
-# =========================
-# 8) Visualizaciones
-# =========================
-colA, colB = st.columns([1.15, 0.85], gap="large")
+# --- VISUALIZACIONES PRINCIPALES ---
 
-with colA:
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.markdown("#### 📈 Evolución de ventas (tendencia)")
-    st.caption("Comportamiento temporal. Útil para estacionalidad, quiebres o picos de demanda.")
+# Crear pestañas para organizar el contenido
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📊 Visión General",
+    "🗺️ Análisis Regional",
+    "🏛️ Análisis por Organismo",
+    "📅 Tendencia Temporal",
+    "📋 Datos Detallados"
+])
 
-    ts = (
-        dff.groupby("Mes", as_index=False)
-        .agg(VentaCLP=("VentaCLP", "sum"), Unidades=("Cantidad", "sum"), Docs=("Documento", "nunique"))
-        .sort_values("Mes")
+with tab1:
+    st.header("Visión General del Mercado")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Distribución por región
+        fig_regiones = px.pie(
+            df_filtrado,
+            names='Region',
+            title='Distribución de Licitaciones por Región',
+            hole=0.4,
+            color_discrete_sequence=px.colors.qualitative.Set3
+        )
+        fig_regiones.update_traces(textposition='inside', textinfo='percent+label')
+        st.plotly_chart(fig_regiones, use_container_width=True)
+    
+    with col2:
+        # Distribución por tipo de organismo
+        fig_categorias = px.bar(
+            df_filtrado['CategoriaOrganismo'].value_counts().reset_index(),
+            x='count',
+            y='CategoriaOrganismo',
+            title='Licitaciones por Tipo de Organismo',
+            orientation='h',
+            color='CategoriaOrganismo',
+            color_discrete_sequence=px.colors.qualitative.Pastel
+        )
+        fig_categorias.update_layout(showlegend=False, yaxis={'categoryorder':'total ascending'})
+        st.plotly_chart(fig_categorias, use_container_width=True)
+    
+    # Evolución anual
+    evolucion_anual = df_filtrado.groupby('Año').agg({
+        'IDLicitacion': 'count',
+        'Monto_CLP_Millones': 'sum'
+    }).reset_index().rename(columns={'IDLicitacion': 'Cantidad'})
+    
+    fig_evolucion = make_subplots(specs=[[{"secondary_y": True}]])
+    
+    fig_evolucion.add_trace(
+        go.Bar(x=evolucion_anual['Año'], y=evolucion_anual['Cantidad'], name="Cantidad", marker_color='#3498db'),
+        secondary_y=False,
     )
-
-    fig_ts = px.line(
-        ts,
-        x="Mes",
-        y="VentaCLP",
-        markers=True,
-        hover_data={"Unidades": True, "Docs": True, "VentaCLP": ":,.0f"},
+    
+    fig_evolucion.add_trace(
+        go.Scatter(x=evolucion_anual['Año'], y=evolucion_anual['Monto_CLP_Millones'], 
+                   name="Monto Total (MM CLP)", marker_color='#e74c3c', line=dict(width=3)),
+        secondary_y=True,
     )
-    fig_ts.update_layout(
-        height=380,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=COL_TEXT),
-        xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor=COL_GRID),
-        margin=dict(l=10, r=10, t=10, b=10),
+    
+    fig_evolucion.update_layout(
+        title_text="Evolución Anual de Licitaciones",
+        hovermode='x unified'
     )
-    st.plotly_chart(fig_ts, use_container_width=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    fig_evolucion.update_xaxes(title_text="Año")
+    fig_evolucion.update_yaxes(title_text="Cantidad de Licitaciones", secondary_y=False)
+    fig_evolucion.update_yaxes(title_text="Monto Total (MM CLP)", secondary_y=True)
+    
+    st.plotly_chart(fig_evolucion, use_container_width=True)
 
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.markdown("#### 🧪 Distribución de precios unitarios")
-    st.caption("Detecta outliers y rangos típicos (por unidad).")
-
-    fig_hist = px.histogram(
-        dff[dff["PrecioUnit"] > 0],
-        x="PrecioUnit",
-        nbins=40,
-        hover_data=["Producto", "Cliente", "Vendedor"],
+with tab2:
+    st.header("Análisis Regional Detallado")
+    
+    # Selector de región para análisis detallado
+    region_analisis = st.selectbox(
+        "Selecciona una región para análisis detallado",
+        options=sorted(df_filtrado['Region'].unique())
     )
-    fig_hist.update_layout(
-        height=330,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=COL_TEXT),
-        xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor=COL_GRID),
-        margin=dict(l=10, r=10, t=10, b=10),
+    
+    df_region = df_filtrado[df_filtrado['Region'] == region_analisis]
+    
+    if not df_region.empty:
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Licitaciones en región", len(df_region))
+        with col2:
+            st.metric("Monto total (MM CLP)", f"${df_region['Monto_CLP_Millones'].sum():,.0f}M")
+        with col3:
+            st.metric("Organismos en región", df_region['Organismo'].nunique())
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Top organismos en la región
+            top_organismos_region = df_region['Organismo'].value_counts().head(10)
+            fig_top_region = px.bar(
+                x=top_organismos_region.values,
+                y=top_organismos_region.index,
+                title=f'Top 10 Organismos en {region_analisis}',
+                orientation='h',
+                color=top_organismos_region.values,
+                color_continuous_scale='Viridis'
+            )
+            fig_top_region.update_layout(xaxis_title="Cantidad de Licitaciones", yaxis_title="")
+            st.plotly_chart(fig_top_region, use_container_width=True)
+        
+        with col2:
+            # Evolución en la región
+            evolucion_region = df_region.groupby('Año').size().reset_index(name='Cantidad')
+            fig_evol_region = px.line(
+                evolucion_region,
+                x='Año',
+                y='Cantidad',
+                title=f'Evolución en {region_analisis}',
+                markers=True
+            )
+            fig_evol_region.update_layout(xaxis_title="Año", yaxis_title="Licitaciones")
+            st.plotly_chart(fig_evol_region, use_container_width=True)
+        
+        # Mapa de calor mensual
+        heatmap_data = df_region.groupby(['Año', 'MesNombre']).size().reset_index(name='Cantidad')
+        meses_orden = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        
+        fig_heatmap = px.density_heatmap(
+            heatmap_data,
+            x='Año',
+            y='MesNombre',
+            z='Cantidad',
+            title=f'Estacionalidad de Licitaciones en {region_analisis}',
+            color_continuous_scale='Reds',
+            category_orders={"MesNombre": meses_orden}
+        )
+        st.plotly_chart(fig_heatmap, use_container_width=True)
+
+with tab3:
+    st.header("Análisis por Organismo")
+    
+    # Selector de categoría
+    categoria_analisis = st.selectbox(
+        "Selecciona tipo de organismo",
+        options=['Todos'] + sorted(df_filtrado['CategoriaOrganismo'].unique())
     )
-    st.plotly_chart(fig_hist, use_container_width=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    
+    df_categoria = df_filtrado if categoria_analisis == 'Todos' else df_filtrado[df_filtrado['CategoriaOrganismo'] == categoria_analisis]
+    
+    # Top organismos general
+    st.subheader(f"Top 20 Organismos Licitantes - {categoria_analisis}")
+    
+    top_20 = df_categoria.groupby('Organismo').agg({
+        'IDLicitacion': 'count',
+        'Monto_CLP_Millones': 'sum'
+    }).round(2).rename(columns={'IDLicitacion': 'Cantidad', 'Monto_CLP_Millones': 'Monto_Total_MM'})
+    
+    top_20 = top_20.sort_values('Cantidad', ascending=False).head(20).reset_index()
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        fig_top = px.bar(
+            top_20,
+            x='Cantidad',
+            y='Organismo',
+            title='Por Cantidad de Licitaciones',
+            orientation='h',
+            color='Monto_Total_MM',
+            color_continuous_scale='Viridis',
+            text='Cantidad'
+        )
+        fig_top.update_layout(yaxis={'categoryorder':'total ascending'})
+        st.plotly_chart(fig_top, use_container_width=True)
+    
+    with col2:
+        # Tabla resumen
+        st.dataframe(
+            top_20[['Organismo', 'Cantidad', 'Monto_Total_MM']],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Monto_Total_MM": st.column_config.NumberColumn(
+                    "Monto Total (MM CLP)",
+                    format="₪ %.0fM"
+                )
+            }
+        )
+    
+    # Análisis de concentración
+    st.subheader("Análisis de Concentración del Mercado")
+    
+    # Calcular concentración (Top N %)
+    total_lic = len(df_categoria)
+    top_5_pct = (top_20.head(5)['Cantidad'].sum() / total_lic * 100) if total_lic > 0 else 0
+    top_10_pct = (top_20.head(10)['Cantidad'].sum() / total_lic * 100) if total_lic > 0 else 0
+    top_20_pct = (top_20['Cantidad'].sum() / total_lic * 100) if total_lic > 0 else 0
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Concentración Top 5", f"{top_5_pct:.1f}%")
+    with col2:
+        st.metric("Concentración Top 10", f"{top_10_pct:.1f}%")
+    with col3:
+        st.metric("Concentración Top 20", f"{top_20_pct:.1f}%")
 
-with colB:
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.markdown("#### 🏆 Top (por ventas)")
-    st.caption("Ranking dinámico según agrupación seleccionada (Top N).")
-
-    group_col = {
-        "Mes": "Mes",
-        "Trimestre": "Trimestre",
-        "Cliente": "Cliente",
-        "Vendedor": "Vendedor",
-        "Producto": "Producto",
-    }[group_main]
-
-    top = (
-        dff.groupby(group_col, as_index=False)
-        .agg(VentaCLP=("VentaCLP", "sum"), Unidades=("Cantidad", "sum"), Docs=("Documento", "nunique"))
-        .sort_values("VentaCLP", ascending=False)
-        .head(top_n)
+with tab4:
+    st.header("Análisis de Tendencia Temporal")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Vista por mes
+        tendencia_mensual = df_filtrado.groupby(df_filtrado['FechaPublicacion'].dt.to_period('M')).size().reset_index(name='Cantidad')
+        tendencia_mensual['Fecha'] = tendencia_mensual['FechaPublicacion'].astype(str)
+        
+        fig_mensual = px.line(
+            tendencia_mensual,
+            x='Fecha',
+            y='Cantidad',
+            title='Tendencia Mensual de Licitaciones',
+            markers=True
+        )
+        fig_mensual.update_xaxes(title_text="Mes-Año")
+        fig_mensual.update_yaxes(title_text="Cantidad")
+        st.plotly_chart(fig_mensual, use_container_width=True)
+    
+    with col2:
+        # Distribución por trimestre
+        trimestres = df_filtrado.groupby(['Año', 'Trimestre']).size().reset_index(name='Cantidad')
+        trimestres['Año-Trim'] = trimestres['Año'].astype(str) + '-T' + trimestres['Trimestre'].astype(str)
+        
+        fig_trimestral = px.bar(
+            trimestres,
+            x='Año-Trim',
+            y='Cantidad',
+            title='Licitaciones por Trimestre',
+            color='Año',
+            color_discrete_sequence=px.colors.qualitative.Bold
+        )
+        fig_trimestral.update_xaxes(title_text="Año-Trimestre")
+        fig_trimestral.update_yaxes(title_text="Cantidad")
+        st.plotly_chart(fig_trimestral, use_container_width=True)
+    
+    # Análisis de estacionalidad
+    st.subheader("Patrón Estacional por Mes")
+    
+    estacionalidad = df_filtrado.groupby('MesNombre').size().reset_index(name='Cantidad')
+    meses_orden = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    
+    fig_estacional = px.bar(
+        estacionalidad,
+        x='MesNombre',
+        y='Cantidad',
+        title='Distribución de Licitaciones por Mes',
+        color='Cantidad',
+        color_continuous_scale='Blues',
+        category_orders={"MesNombre": meses_orden}
     )
-
-    fig_top = px.bar(
-        top.sort_values("VentaCLP", ascending=True),
-        x="VentaCLP",
-        y=group_col,
-        orientation="h",
-        hover_data={"Unidades": True, "Docs": True, "VentaCLP": ":,.0f"},
+    fig_estacional.update_layout(xaxis_title="Mes", yaxis_title="Cantidad")
+    st.plotly_chart(fig_estacional, use_container_width=True)
+    
+    # Análisis YoY (Year over Year)
+    st.subheader("Crecimiento Interanual")
+    
+    yoy = df_filtrado.groupby('Año').size().reset_index(name='Cantidad')
+    yoy['Crecimiento %'] = yoy['Cantidad'].pct_change() * 100
+    
+    fig_yoy = go.Figure()
+    fig_yoy.add_trace(go.Bar(
+        x=yoy['Año'],
+        y=yoy['Cantidad'],
+        name='Cantidad',
+        marker_color='#2ecc71'
+    ))
+    fig_yoy.add_trace(go.Scatter(
+        x=yoy['Año'],
+        y=yoy['Crecimiento %'],
+        name='Crecimiento %',
+        yaxis='y2',
+        marker_color='#e67e22',
+        line=dict(width=3)
+    ))
+    
+    fig_yoy.update_layout(
+        title='Crecimiento Interanual de Licitaciones',
+        xaxis=dict(title='Año'),
+        yaxis=dict(title='Cantidad', side='left'),
+        yaxis2=dict(title='Crecimiento %', side='right', overlaying='y', tickformat='.1f'),
+        hovermode='x unified'
     )
-    fig_top.update_layout(
-        height=720,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=COL_TEXT),
-        xaxis=dict(showgrid=True, gridcolor=COL_GRID),
-        yaxis=dict(showgrid=False),
-        margin=dict(l=10, r=10, t=10, b=10),
-    )
-    st.plotly_chart(fig_top, use_container_width=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    
+    st.plotly_chart(fig_yoy, use_container_width=True)
 
+with tab5:
+    st.header("Datos Detallados")
+    
+    # Selector de columnas a mostrar
+    columnas_mostrar = st.multiselect(
+        "Selecciona columnas a mostrar",
+        options=['IDLicitacion', 'NombreLicitacion', 'Tipo', 'Estado', 'FechaPublicacion',
+                'Organismo', 'Region', 'CategoriaOrganismo', 'MontoLicitacion', 
+                'Monto_CLP_Millones', 'Tipo_Monto_Categoria'],
+        default=['IDLicitacion', 'NombreLicitacion', 'Organismo', 'Region', 
+                'FechaPublicacion', 'MontoLicitacion']
+    )
+    
+    if columnas_mostrar:
+        df_display = df_filtrado[columnas_mostrar].copy()
+        
+        # Formatear fecha para mejor visualización
+        if 'FechaPublicacion' in df_display.columns:
+            df_display['FechaPublicacion'] = df_display['FechaPublicacion'].dt.strftime('%d/%m/%Y')
+        
+        # Mostrar tabla con formato mejorado
+        st.dataframe(
+            df_display,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Monto_CLP_Millones": st.column_config.NumberColumn(
+                    "Monto (MM CLP)",
+                    format="₪ %.2fM"
+                ),
+                "MontoLicitacion": st.column_config.TextColumn(
+                    "Monto Original"
+                )
+            }
+        )
+        
+        # Estadísticas y descargas
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.info(f"**Total registros:** {len(df_display)}")
+            st.info(f"**Rango de fechas:** {df_filtrado['FechaPublicacion'].min().strftime('%d/%m/%Y')} a {df_filtrado['FechaPublicacion'].max().strftime('%d/%m/%Y')}")
+        
+        with col2:
+            # Botón de descarga
+            csv = df_display.to_csv(index=False, encoding='utf-8-sig')
+            st.download_button(
+                label="📥 Descargar datos como CSV",
+                data=csv,
+                file_name=f"licitaciones_filtradas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                type="primary"
+            )
+    else:
+        st.warning("Selecciona al menos una columna para mostrar")
+
+# Footer
 st.markdown("---")
-
-# =========================
-# 9) Tablas (director-ready)
-# =========================
-gcols = [group_col] if group_col in dff.columns else ["Cliente"]
-
-summary = (
-    dff.groupby(gcols, as_index=False)
-    .agg(
-        VentaCLP=("VentaCLP", "sum"),
-        Unidades=("Cantidad", "sum"),
-        Docs=("Documento", "nunique"),
-        Clientes=("Cliente", "nunique"),
-    )
-)
-summary["PrecioPromCLP"] = np.where(summary["Unidades"] > 0, summary["VentaCLP"] / summary["Unidades"], np.nan)
-summary = summary.sort_values("VentaCLP", ascending=False)
-
-c1, c2 = st.columns([1, 1], gap="large")
-
-with c1:
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.markdown("#### Resumen agregado")
-    st.dataframe(summary.head(40), use_container_width=True, hide_index=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-with c2:
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.markdown("#### Detalle (filtrado)")
-    st.dataframe(dff.sort_values("Fecha", ascending=False).head(2000), use_container_width=True, hide_index=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# =========================
-# 10) Export
-# =========================
-export_cols = [
-    "Fecha", "Documento", "CodCliente", "Cliente", "Vendedor",
-    "ItemCode", "Producto", "Cantidad", "PrecioUnit", "VentaCLP",
-    "Mes", "Trimestre",
-]
-export_cols = [c for c in export_cols if c in dff.columns]
-csv_bytes = dff[export_cols].to_csv(index=False).encode("utf-8")
-
-st.download_button(
-    "⬇️ Descargar datos filtrados (CSV)",
-    data=csv_bytes,
-    file_name="INSAMAR_ventas_filtradas.csv",
-    mime="text/csv",
-)
-
-with st.expander("🧠 Cómo leer este dashboard (2 minutos)"):
-    st.markdown(
-        """
-**Qué hace esto**
-- Permite **filtrar** ventas por fecha, cliente, vendedor y texto en producto.
-- Entrega **KPIs operativos** (venta, unidades, precio promedio ponderado, documentos, clientes).
-- Muestra **tendencia mensual**, distribución de precios, y rankings según la agrupación seleccionada.
-- Incluye vista “director” con **resumen agregable** + **detalle exportable**.
-
-**Definiciones**
-- **Venta total**: suma de “Venta”.
-- **Unidades**: suma de “Quantity”.
-- **Precio prom. por unidad**: Venta / Unidades (ponderado).
-- **Documento**: “Número interno” único.
-
-**Usos típicos**
-- Detectar meses pico/bajo, clientes concentrados, productos dominantes, outliers de precio.
-        """
-    )
+st.markdown("""
+    <div style='text-align: center; color: #666; padding: 10px;'>
+        <p>🗑️ Analizador de Licitaciones de Residuos Peligrosos | Desarrollado con Streamlit y Python</p>
+        <p style='font-size: 0.8em;'>Datos actualizados al 24 de febrero de 2026</p>
+    </div>
+""", unsafe_allow_html=True)
